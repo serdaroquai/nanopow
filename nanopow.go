@@ -1,21 +1,18 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/hex"
+	"flag"
 	"fmt"
 
-	"github.com/aws/aws-lambda-go/events"
-	// "github.com/aws/aws-lambda-go/lambda"
 	"golang.org/x/crypto/blake2b"
 )
 
 const (
-	digestLength       = 8  // 8 bytes
-	workLength         = 8  // 8 bytes
-	messageLength      = 32 // 32 bytes
-	numWorkers         = 4  // max 256
+	digestLength       = 8   // 8 bytes
+	workLength         = 8   // 8 bytes
+	messageLength      = 32  // 32 bytes
+	numWorkers         = 256 // max 256
 	zeroByte      byte = 0
 )
 
@@ -26,32 +23,29 @@ var (
 
 func main() {
 
-	// lambda.Start(HandleRequest)
+	thresholdString := flag.String("t", "ffffffc000000000", "threshold value that proof must fulfill")
+	inputString := flag.String("h", "C08C7727AC85E6DCC26D13B2FB9083AF05C17616C4999B966C2BBCD1586398E6", "previous block hash to be used as input")
 
-	input, _ := hex.DecodeString("B53387DCE4553F480665E92126DB3022AF7CBD77CC1060E33659A951DB5BC2BA") //Big Endian
-	result := Solve(input, prodThreshold, numWorkers)
-	// result,_ := hex.DecodeString("388e72b262c2bbb3") // Little Endian
-	reverse(result) // Convert to BigEndian
-	// resultEncoded := hex.EncodeToString(result)
+	flag.Parse()
 
-	fmt.Println(hex.EncodeToString(Blake2b(append(result, input...))))
-}
-
-func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-
-	block := request.QueryStringParameters["block"]
-	if len(block) != 64 {
-		return events.APIGatewayProxyResponse{Body: "Invalid block value", StatusCode: 400}, nil
+	input, err := hex.DecodeString(*inputString)
+	if err != nil || len(input) != messageLength {
+		fmt.Println("Invalid previous block hash")
+		return
 	}
-	input, _ := hex.DecodeString(block)
 
-	result := Solve(input, prodThreshold, numWorkers)
-	resultEncoded := hex.EncodeToString(result)
+	threshold, _ := hex.DecodeString(*thresholdString)
+	if err != nil || len(threshold) != digestLength {
+		fmt.Println("Invalid threshold value")
+		return
+	}
 
-	return events.APIGatewayProxyResponse{Body: resultEncoded, StatusCode: 200}, nil
+	work := Solve(input, threshold, numWorkers)
+
+	fmt.Println(hex.EncodeToString(work))
 }
 
-// Solve computes a Proof Of Work that is above given threshold for the given "previous block hash"
+// Solve computes a Proof Of Work that is above given threshold for a given "previous block hash"
 func Solve(input []byte, threshold []byte, numberOFWorkers int) []byte {
 	done := make(chan []byte)
 
@@ -76,16 +70,15 @@ func startWorker(input []byte, done chan []byte, threshold []byte) {
 		hash.Write(input)
 		result := hash.Sum(nil)
 
-		reverse(result) // convert little endian to big endian for comparison
-		if bytes.Compare(result, threshold) >= 0 {
+		if compare(threshold, result) < 0 {
 			// found proof of work
-			done <- work
+			done <- reverse(work)
 			break
 		}
 
 		hash.Reset()
 
-		// increment digits
+		// calculate next works
 		for j := workLength - 1; j >= 0; j-- {
 			work[j]++
 			if work[j] != zeroByte {
@@ -93,9 +86,28 @@ func startWorker(input []byte, done chan []byte, threshold []byte) {
 			}
 		}
 
-		//increment i
 		i++
 	}
+}
+
+// compares a to reverse of b in place lexicographically
+// assumes a and b are equal length
+func compare(a, b []byte) int {
+
+	i := 0
+	j := len(b) - 1
+
+	for j >= 0 {
+		if a[i] > b[j] {
+			return 1
+		}
+		if a[i] < b[j] {
+			return -1
+		}
+		i++
+		j--
+	}
+	return 0
 }
 
 func Blake2b(input []byte) []byte {
@@ -104,14 +116,13 @@ func Blake2b(input []byte) []byte {
 	return hash.Sum(nil)
 }
 
-func reverse(src []byte) {
-	i := 0
-	j := len(src) - 1
-	for i < j {
-		tmp := src[i]
-		src[i] = src[j]
-		src[j] = tmp
-		i++
-		j--
+func reverse(src []byte) []byte {
+	length := len(src)
+	result := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		result[length-i-1] = src[i]
 	}
+
+	return result
 }
