@@ -1,98 +1,128 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"crypto/rand"
 	"encoding/hex"
+	"flag"
 	"fmt"
 
-	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	"golang.org/x/crypto/blake2b"
 )
 
 const (
-	digestLength = 8 // 8 bytes
-	workLength   = 8 // 8 bytes
+	digestLength       = 8   // 8 bytes
+	workLength         = 8   // 8 bytes
+	messageLength      = 32  // 32 bytes
+	numWorkers         = 256 // max 256
+	zeroByte      byte = 0
 )
 
 var (
 	prodThreshold, _ = hex.DecodeString("ffffffc000000000")
-	testThreshold, _ = hex.DecodeString("ffff000000000000")
+	testThreshold, _ = hex.DecodeString("ff00000000000000")
 )
 
-func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	fmt.Printf("Processing request data for request %s.\n", request.RequestContext.RequestID)
-	fmt.Printf("Body size = %d.\n", len(request.Body))
-
-	fmt.Println("Headers:")
-	for key, value := range request.Headers {
-		fmt.Printf("    %s: %s\n", key, value)
-	}
-	block := request.QueryStringParameters["block"]
-	if len(block) == 64 {
-		work := ComputePoW(block)
-		return events.APIGatewayProxyResponse{Body: work, StatusCode: 200}, nil
-	} else {
-		return events.APIGatewayProxyResponse{Body: "Invalid block value", StatusCode: 400}, nil
-	}
-}
-
 func main() {
-	lambda.Start(HandleRequest)
-}
 
-func ComputePoW(prev string) string {
-	previous, err := hex.DecodeString(prev)
-	if err != nil {
-		panic(err)
+	thresholdString := flag.String("t", "ffffffc000000000", "threshold value that proof must fulfill")
+	inputString := flag.String("h", "C08C7727AC85E6DCC26D13B2FB9083AF05C17616C4999B966C2BBCD1586398E6", "previous block hash to be used as input")
+
+	flag.Parse()
+
+	input, err := hex.DecodeString(*inputString)
+	if err != nil || len(input) != messageLength {
+		fmt.Println("Invalid previous block hash")
+		return
 	}
 
-	// generate a random work []byte
-	for {
-		work := make([]byte, workLength)
-		rand.Read(work)
-		work[workLength-1] = 0
+	threshold, _ := hex.DecodeString(*thresholdString)
+	if err != nil || len(threshold) != digestLength {
+		fmt.Println("Invalid threshold value")
+		return
+	}
 
-		for j := 0; j < 256; j++ {
-			work[workLength-1] = byte(j)
-			if Validate(work, previous) {
-				return hex.EncodeToString(reverse(work))
+	work := Solve(input, threshold, numWorkers)
+
+	fmt.Println(hex.EncodeToString(work))
+}
+
+// Solve computes a Proof Of Work that is above given threshold for a given "previous block hash"
+func Solve(input []byte, threshold []byte, numberOFWorkers int) []byte {
+	done := make(chan []byte)
+
+	for i := 0; i < numberOFWorkers; i++ {
+		message := append(make([]byte, workLength), input...)
+		work := message[:workLength]
+		work[0] = byte((256 / numberOFWorkers) * i)
+
+		go startWorker(message, done, threshold)
+	}
+
+	result := <-done
+	return result
+}
+
+func startWorker(input []byte, done chan []byte, threshold []byte) {
+	work := input[:workLength]
+	hash, _ := blake2b.New(digestLength, nil)
+
+	for i := 0; ; {
+
+		hash.Write(input)
+		result := hash.Sum(nil)
+
+		if compare(threshold, result) < 0 {
+			// found proof of work
+			done <- reverse(work)
+			break
+		}
+
+		hash.Reset()
+
+		// calculate next works
+		for j := workLength - 1; j >= 0; j-- {
+			work[j]++
+			if work[j] != zeroByte {
+				break
 			}
 		}
+
+		i++
 	}
 }
 
-func Validate(work []byte, prev []byte) bool {
-	result, err := Blake2bFromBytes(work, prev)
-	if err != nil {
-		return false
-	}
-	return (bytes.Compare(result, prodThreshold) >= 0)
-}
+// compares a to reverse of b in place lexicographically
+// assumes a and b are equal length
+func compare(a, b []byte) int {
 
-func Blake2bFromBytes(work []byte, prev []byte) ([]byte, error) {
-
-	hash, err := blake2b.New(digestLength, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	hash.Write(work)
-	hash.Write(prev)
-	return reverse(hash.Sum(nil)), nil
-}
-
-func reverse(src []byte) []byte {
 	i := 0
-	j := len(src) - 1
-	for i < j {
-		tmp := src[i]
-		src[i] = src[j]
-		src[j] = tmp
+	j := len(b) - 1
+
+	for j >= 0 {
+		if a[i] > b[j] {
+			return 1
+		}
+		if a[i] < b[j] {
+			return -1
+		}
 		i++
 		j--
 	}
-	return src
+	return 0
+}
+
+func Blake2b(input []byte) []byte {
+	hash, _ := blake2b.New(digestLength, nil)
+	hash.Write(input)
+	return hash.Sum(nil)
+}
+
+func reverse(src []byte) []byte {
+	length := len(src)
+	result := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		result[length-i-1] = src[i]
+	}
+
+	return result
 }
