@@ -11,8 +11,8 @@ var result []byte
 
 func TestWork(t *testing.T) {
 	threshold, _ := hex.DecodeString("ffffffc000000000")
-	input, _ := hex.DecodeString("C08C7727AC85E6DCC26D13B2FB9083AF05C17616C4999B966C2BBCD1586398E6") //Big Endian
-	work, _ := hex.DecodeString("ebd042008df3b2be")                                                  // Little Endian
+	input, _ := hex.DecodeString("C08C7727AC85E6DCC26D13B2FB9083AF05C17616C4999B966C2BBCD1586398E6") 
+	work, _ := hex.DecodeString("ebd042008df3b2be")                                                  
 	hash := Blake2b(append(reverse(work), input...))
 	if compare(threshold, hash) >= 0 {
 		t.Fail()
@@ -54,6 +54,7 @@ func BenchmarkSolve(b *testing.B) {
 		// the compiler eliminating the function call.
 		r = Solve(bytes, threshold, 256)
 	}
+	
 	// always store the result to a package level variable
 	// so the compiler cannot eliminate the Benchmark itself.
 	result = r

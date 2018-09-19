@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/hex"
-	"flag"
 	"fmt"
+	"os"
 
 	"golang.org/x/crypto/blake2b"
 )
@@ -12,7 +12,7 @@ const (
 	digestLength       = 8   // 8 bytes
 	workLength         = 8   // 8 bytes
 	messageLength      = 32  // 32 bytes
-	numWorkers         = 256 // max 256
+	numWorkers         = 256 // should be powers of 2, max 256
 	zeroByte      byte = 0
 )
 
@@ -23,21 +23,28 @@ var (
 
 func main() {
 
-	thresholdString := flag.String("t", "ffffffc000000000", "threshold value that proof must fulfill")
-	inputString := flag.String("h", "C08C7727AC85E6DCC26D13B2FB9083AF05C17616C4999B966C2BBCD1586398E6", "previous block hash to be used as input")
+	args := os.Args[1:]
 
-	flag.Parse()
+	threshold := prodThreshold
 
-	input, err := hex.DecodeString(*inputString)
+	if len(args) == 0 {
+		fmt.Println("Usage:")
+		fmt.Println("nanopow <prevblockhash> <optional:threshold>")
+		return
+	}
+
+	input, err := hex.DecodeString(args[0])
 	if err != nil || len(input) != messageLength {
 		fmt.Println("Invalid previous block hash")
 		return
 	}
 
-	threshold, _ := hex.DecodeString(*thresholdString)
-	if err != nil || len(threshold) != digestLength {
-		fmt.Println("Invalid threshold value")
-		return
+	if len(args) == 2 {
+		threshold, _ = hex.DecodeString(args[1])
+		if err != nil || len(threshold) != digestLength {
+			fmt.Println("Invalid threshold value")
+			return
+		}
 	}
 
 	work := Solve(input, threshold, numWorkers)
