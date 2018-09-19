@@ -12,6 +12,7 @@ nanopow takes two arguments:
 outputs: a valid 8 bytes 'proof of work' for the given previos block hash. Output is represented as in nanode.co block explorer. Check out https://www.nanode.co/block/C1A200FA700013E578D82DC7A88F7666BA63E7420357A1E447B7B8CA9F1BDD23 'Work' row for an example output format.
 
 `nanopow C1A200FA700013E578D82DC7A88F7666BA63E7420357A1E447B7B8CA9F1BDD23`
+
 Output: `622b548e2abb112d`
 
 ## Installation
