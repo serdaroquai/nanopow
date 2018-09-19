@@ -20,3 +20,5 @@ Output: `622b548e2abb112d`
 1. `go get github.com/serdaroquai/nanopow` 
 2. `go build nanopow.go`
 
+## Spread the love
+xrb_3mjri5ywtysxm154k66rccf1n5opo6zs4gcn5ybq3g384a4fcpkrm5kzpngy
